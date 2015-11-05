@@ -12,14 +12,14 @@ microprocessor bus with a minimum of external logic.  When operated in slave mod
 (which is the target I initially selected to develop on) supports two address lines allowing four distinct memory
 addresses to be accessed (both reading and writing).
 
-One caveat of using the PIC24 is that is requirees operation with a 3.3V power supply.  Many of the older CPUs out there
-require a 5V supply.  This is a regrettable outcome of the divergence of technologies over the past three plus decades.
+One caveat of using the PIC24 is that it requirees operation with a 3.3V power supply.  Many of the older CPUs out there
+require a 5V supply.  This is a regrettable result of the evolution of technology over the past three plus decades.
 Fortunately, there are technical solutions which are not difficult to implement.  I use a 74LVX4245 level converting
 transceiver mounted on a SOIC-to-DIP adapter myself, though other similar solutions should work equally well.
 
 This version of the code presently supports a variant of the MC6850 UART.  Exact duplication of functionality is not
 possible for several reasons.  First, the PIC does not support a 7-bit mode (though it can probably be emulated with
-8-bit mode and parity in software).  Second, rather than forcing the user to provide a separate oscillator from which
+8-bit mode and software parity).  Second, rather than forcing the user to provide a separate oscillator from which
 the serial timing is derived, the PICs on-board oscillator is used for this purpose.  This allows the user to select
 virtually any standard baud rate from 300 baud though 921600 baud through an extension.  See the source code for further
 details.  The default baud rate is 9600 baud, though that may be easily changed.

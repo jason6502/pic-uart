@@ -33,3 +33,5 @@ PIC-SPI and PIC-I2C respectively.  These should provide convenient interfaces to
 for those who wish to connect modern devices to their retro-CPUs.
 
 Bug fixes, comments, and suggestions are welcome.
+
+See http://forum.6502.org/viewtopic.php?f=4&t=3488 for more details and ongoing discussion related to this project.

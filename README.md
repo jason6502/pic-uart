@@ -24,9 +24,10 @@ the serial timing is derived, the PICs on-board oscillator is used for this purp
 virtually any standard baud rate from 300 baud though 921600 baud through an extension.  See the source code for further
 details.  The default baud rate is 9600 baud, though that may be easily changed.
 
-This source code represents a work in progress and has not yet been properly tested beyond error-free compilation.  I
-plan to test it over the next week or two and post any fixes that I find.  Time allowing, I will also create a
-6551 mode as well and allow the user to select from among the two with a compile-time flag.
+This source code represents a work in progress and has not yet been fully tested yet.  I have successfully output
+"Hello World" with it at various baud rates from 1200 through 38400 baud.  Additional testing will take place over
+next week or so and I will update the code as needed.  Time allowing, I may also create a 6551 mode as well and
+allow the user to select from among the two with a compile-time flag.
 
 I also hope to use this project as a starting point for an 8-bit CPU interface to SPI and I2C which I'll call
 PIC-SPI and PIC-I2C respectively.  These should provide convenient interfaces to these two populare serial protocols

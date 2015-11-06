@@ -21,10 +21,6 @@
  *
  * 6551/6850 ACIA Emulation on Microchip PIC24FJ32GA002 MCU
  *
- * Note:  This file was edited using Microchip MPLAB X IDE and compiled
- *        with the Microchip XC16 compiler suite.  If you are using any
- *        other compiler, changes WILL be required.
- *
  * PIN NAME     DESCRIPTION
  * ---------------------------------------------------------------------
  *  1  MCLRn    Reserved for programming/debugging
@@ -112,21 +108,21 @@
  *
  * Baud Rate    BRG-16  %err    BRG-4   %err
  * -----------------------------------------------------
- *       300      6143  0.00    24575   0.00
- *       600      3071  0.00    12287   0.00
- *      1200      1535  0.00     6143   0.00
- *      2400       767  0.00     3071   0.00
- *      4800       383  0.00     1535   0.00
- *      9600       191  0.00      767   0.00
- *     14400       127  0.00      511   0.00
- *     19200        95  0.00      383   0.00
- *     38400        47  0.00      191   0.00
- *     57600        31  0.00      127   0.00
- *     76800        23  0.00       95   0.00
- *    115200        15  0.00       63   0.00
- *    230400         7  0.00       31   0.00
- *    460800         3  0.00       15   0.00
- *    921600         1  0.00        7   0.00
+ *       300      3071  0.00    12287   0.00
+ *       600      1535  0.00     6143   0.00
+ *      1200       767  0.00     3071   0.00
+ *      2400       383  0.00     1535   0.00
+ *      4800       191  0.00      767   0.00
+ *      9600        95  0.00      383   0.00
+ *     14400        63  0.00      255   0.00
+ *     19200        47  0.00      191   0.00
+ *     38400        23  0.00       95   0.00
+ *     57600        15  0.00       63   0.00
+ *     76800        23  0.00       47   0.00
+ *    115200         7  0.00       31   0.00
+ *    230400         3  0.00       15   0.00
+ *    460800         1  0.00        7   0.00
+ *    921600         0  0.00        3   0.00
  *
  * 6551 Mode
  * ---------
@@ -155,7 +151,7 @@
 #pragma config JTAGEN = OFF         // JTAG port is disabled
 
 #ifndef FCY
-#define FCY     29491200            // Tweaked 8 MHz RC to 7.3728 MHz w/ 4x PLL
+#define FCY     14745600            // FCY = FOSC / 2
 #endif
 
 // Standard includes
@@ -164,7 +160,7 @@
 #include <stdint.h>
 
 // Program constants
-const uint16_t DEF_DIVISOR = 767;   // Default baud rate is 9600 baud (BRGH=1)
+const uint16_t DEF_DIVISOR = 95;    // Default baud rate is 9600/38400
 
 // Typedefs
 typedef struct {
@@ -277,13 +273,14 @@ void __attribute__((__interrupt__, auto_psv)) _PMPInterrupt(void)
         regs_6850.ctrl = PMDIN1;
 
         // check for master reset
-        if (regs_6850.ctrl & 0x03 == 0x03) {
+        if ((regs_6850.ctrl&0x03) == 0x03) {
             // user requesting master reset
             U1BRG = regs_6850.divisor;      // update UART baud rate generator
             U1MODEbits.UARTEN = 1;          // enable UART
+            U1STAbits.UTXEN = 1;            // enable UART transmitter
         }
         // check for break request
-        else if (regs_6850.ctrl & 0x60 == 0x60) {
+        else if ((regs_6850.ctrl&0x60) == 0x60) {
             // user request to send break character
             if (U1MODEbits.UARTEN) {
                 U1STAbits.UTXBRK = 1;       // set transmit break bit
@@ -362,7 +359,7 @@ int main(void)
         ctrl = regs_6850.ctrl;
 
         // Configure baud rate generator based on CR1 and CR0
-        U1MODEbits.BRGH = regs_6850.ctrl&0x3 == 0;
+        U1MODEbits.BRGH = (regs_6850.ctrl&0x3) == 0;
 
         // Configure parity and stop bits based on CR3 and CR2
         switch (regs_6850.ctrl & 0xc) {
@@ -385,26 +382,26 @@ int main(void)
         }
 
         // Set RTS pin state based on CR6 and CR5
-        LATBbits.LATB4 = regs_6850.ctrl&0x60 == 0x40;
+        LATBbits.LATB4 = (regs_6850.ctrl&0x60) == 0x40;
 
         // If receive interrupts are enabled, test for events which can
         // generate them and do so if detected.
         if (ctrl & 0x80) {
-            if ((regs_6850.status&0x1 == 0) && (uart_status&0x1 == 1)) {
+            if (((regs_6850.status&0x1) == 0) && ((uart_status&0x1) == 1)) {
                 LATAbits.LATA2 = 0;         // rising edge of U1STA.URXDA
             }
-            else if ((regs_6850.status&0x20 == 0) && (uart_status&0x2 == 1)) {
+            else if (((regs_6850.status&0x20) == 0) && ((uart_status&0x2) == 1)) {
                 LATAbits.LATA2 = 0;         // rising edge of U1STA.OERR
             }
-            else if ((regs_6850.status&0x4 == 0) && PORTAbits.RA0 == 1) {
+            else if (((regs_6850.status&0x4) == 0) && PORTAbits.RA0 == 1) {
                 LATAbits.LATA2 = 0;         // rising edge of DCDn
             }
         }
 
         // If transmit interrupts are enabled, generate an interrupt if
         // transmit data empty (not full) event occurs.
-        if (ctrl & 0x60 == 0x20) {
-            if ((regs_6850.status&0x2 == 0) && (uart_status&0x200 == 0)) {
+        if ((ctrl&0x60) == 0x20) {
+            if (((regs_6850.status&0x2) == 0) && ((uart_status&0x200) == 0)) {
                 LATAbits.LATA2 = 0;         // falling edge of U1STA.UTXBF
             }
         }
@@ -422,16 +419,16 @@ int main(void)
         // Update the contents of the 6850 status register
         // If CTS is high, inhibit TDRE (bit 1)
         if (PORTAbits.RA1 == 0) {
-            regs_6850.status = uart_rxda | (~uart_status&0x200>>8) |
+            regs_6850.status = uart_rxda | ((~uart_status&0x200)>>8) |
                                (PORTAbits.RA0<<2) | (PORTAbits.RA1<<3) |
-                               (uart_status&0x4<<2) | (uart_status&0x1<<4) |
-                               (uart_status&0x8<<3) | (~LATAbits.LATA2<<7);
+                               ((uart_status&0x4)<<2) | ((uart_status&0x1)<<4) |
+                               ((uart_status&0x8)<<3) | (~LATAbits.LATA2<<7);
         }
         else {
             regs_6850.status = uart_rxda |
                                (PORTAbits.RA0<<2) | (PORTAbits.RA1<<3) |
-                               (uart_status&0x4<<2) | (uart_status&0x1<<4) |
-                               (uart_status&0x8<<3) | (~LATAbits.LATA2<<7);
+                               ((uart_status&0x4)<<2) | ((uart_status&0x1)<<4) |
+                               ((uart_status&0x8)<<3) | (~LATAbits.LATA2<<7);
         }
 
         // Copy 6850 status register & rdr to PMP output port

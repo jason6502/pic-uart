@@ -22,16 +22,18 @@ possible for several reasons.  First, the PIC does not support a 7-bit mode (tho
 8-bit mode and software parity).  Second, rather than forcing the user to provide a separate oscillator from which
 the serial timing is derived, the PICs on-board oscillator is used for this purpose.  This allows the user to select
 virtually any standard baud rate from 300 baud though 921600 baud through an extension.  See the source code for further
-details.  The default baud rate is 9600 baud, though that may be easily changed.
+details.  The default baud rate is 9600/38400 baud (depending on the 6850 mode register settings), though that may be
+easily changed by writing to the added baud rate generator register.
 
-This source code represents a work in progress and has not yet been fully tested yet.  I have successfully output
-"Hello World" with it at various baud rates from 1200 through 38400 baud.  Additional testing will take place over
-next week or so and I will update the code as needed.  Time allowing, I may also create a 6551 mode as well and
-allow the user to select from among the two with a compile-time flag.
+While this software has undergone limited testing and appears to be functional within some limits, it should at best
+be considered beta quality at the present time.  Additional testing is necessary in order to determine the precise
+operating limitations of the code so that other systems may be designed around these limitations.
 
-I also hope to use this project as a starting point for an 8-bit CPU interface to SPI and I2C which I'll call
-PIC-SPI and PIC-I2C respectively.  These should provide convenient interfaces to these two populare serial protocols
-for those who wish to connect modern devices to their retro-CPUs.
+The testing that has been performed so far consists of polled input and output at baud rates from 1200 through
+38400 baud.  Bus speeds of up to 3.68 MHz were tested using a 65C02 CPU with one wait state inserted.  I expect
+higher bus speeds can be easily reached if some usage guidelines are followed, and I expect that it will work at
+lower speeds without the need for any wait states to be inserted on the bus.  Additional testing is scheduled and
+any problems found will be addressed as quickly as is practicable.
 
 Bug fixes, comments, and suggestions are welcome.
 

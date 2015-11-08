@@ -1,5 +1,5 @@
 /*
- * File:   main.c
+ * File:   pic-uart.c
  *
  * Copyright 2015 by Jason Burke
  *
@@ -124,9 +124,10 @@
  *    460800         1  0.00        7   0.00
  *    921600         0  0.00        3   0.00
  *
- * 6551 Mode
- * ---------
- *
+ * TODO:
+ *     TESTING:  Test interrupt operation
+ *     PERFORMANCE:  Determine exact operating limits
+ *     FUNCTIONALITY:  Add software parity (?), 6551 mode (?)
  */
 
 // Chip Configuration
@@ -242,6 +243,13 @@ static void initHardware(void)
     U1MODEbits.ABAUD = 0;           // auto-baud detection disabled
     U1MODEbits.RXINV = 0;           // receive polarity inversion bit (normal)
     U1MODEbits.BRGH = 1;            // BRG generates 4 clocks per bit period
+    U1STAbits.UTXISEL0 = 0;         // intr generated when any char xfered
+    U1STAbits.UTXISEL1 = 0;         // to the transmit shift register
+    U1STAbits.UTXINV = 0;           // transmit polarity inversion bit
+    U1STAbits.URXISEL = 0b00;       // rx intr flag set when a char received
+    IFS0bits.U1RXIF = 0;            // clear U1RX interrupt flag
+    IPC2bits.U1RXIP = 6;            // set U1RX interrupr priority level
+    IEC0bits.U1RXIE = 1;            // enable U1RX interrupts
     //U1MODEbits.PDSEL = 0b00;        // 8-bit data, no parity
     //U1MODEbits.STSEL = 0;           // one stop bit
     //U1BRG = xxx;                    // configure baud rate
@@ -263,9 +271,26 @@ static void initHardware(void)
 }
 
 ///////////////////////////////////////////////////////////////
+// UART1 RX ISR
+///////////////////////////////////////////////////////////////
+void __attribute__((interrupt, auto_psv, shadow)) _U1RXInterrupt(void)
+{
+    // A new character is available.  If the receive data register is not
+    // already full, copy the new character to it and set the receive
+    // data available flag.
+    if (uart_rxda == 0) {
+        regs_6850.rdr = U1RXREG;
+        uart_rxda = 1;
+    }
+
+    // Clear UART1 RX interrupt flag
+    IFS0bits.U1RXIF = 0;
+}
+
+///////////////////////////////////////////////////////////////
 // PMP ISR
 ///////////////////////////////////////////////////////////////
-void __attribute__((__interrupt__, auto_psv)) _PMPInterrupt(void)
+void __attribute__((interrupt, auto_psv, shadow)) _PMPInterrupt(void)
 {
     // Process writes to address 0 (control register) first
     if (PMSTATbits.IB0F) {
@@ -288,9 +313,8 @@ void __attribute__((__interrupt__, auto_psv)) _PMPInterrupt(void)
             }
         }
     }
-
     // Process writes to address 1 (transmit data register)
-    if (PMSTATbits.IB1F) {
+    else if (PMSTATbits.IB1F) {
         // Clear any existing interrupts on writes to the TDR
         LATAbits.LATA2 = 1;
 
@@ -300,40 +324,41 @@ void __attribute__((__interrupt__, auto_psv)) _PMPInterrupt(void)
         U1TXREG = PMDIN1 >> 8;
     }
 
-    // Process writes to address 2 (baud rate generator low byte)
-    if (PMSTATbits.IB2F) {
-        // Read in new value for low byte of divisor
-        regs_6850.divisor &= 0xff00;
-        regs_6850.divisor |= PMDIN2 & 0xff;
-    }
-
-    // Process writes to address 3 (buad rate generator high byte)
-    if (PMSTATbits.IB3F) {
-        // Read in new value for high byte of divisor
-        regs_6850.divisor &= 0x00ff;
-        regs_6850.divisor |= PMDIN2 & 0xff00;
-    }
-
     // Process reads from address 1 (receive data register)
     if (PMSTATbits.OB1E) {
+        // Clear the OB1E flag by updating PMDOUT1
+        PMDOUT1 &= 0xffde;
+
         // Clear any existing interrupts on reads from the RDR
         LATAbits.LATA2 = 1;
 
         // Clear any overflow errors on reads from the RDR
         U1STAbits.OERR = 0;
 
-        // Is data available?
+        // Check for more data in FIFO
         if (U1STAbits.URXDA) {
-            // more data is available -- copy it to regs_6850.rdr for
-            // further processing and set the receive data available flag
-            uart_rxda = 1;
+            // rdr is empty and more data is available -- copy it to
+            // regs_6850.rdr and set the receive data available flag
             regs_6850.rdr = U1RXREG;
+            uart_rxda = 1;
         }
         else {
             // no more data available -- clear the receive data available flag
             uart_rxda = 0;
         }
+    }
 
+    // Process writes to address 2 (baud rate generator low byte)
+    if (PMSTATbits.IB2F) {
+        // Read in new value for low byte of divisor
+        regs_6850.divisor &= 0xff00;
+        regs_6850.divisor |= PMDIN2 & 0xff;
+    }
+    // Process writes to address 3 (buad rate generator high byte)
+    else if (PMSTATbits.IB3F) {
+        // Read in new value for high byte of divisor
+        regs_6850.divisor &= 0x00ff;
+        regs_6850.divisor |= PMDIN2 & 0xff00;
     }
 
     // Clear PMP interrupt flag
@@ -344,6 +369,7 @@ int main(void)
 {
     uint8_t ctrl;
     uint16_t uart_status;
+    uint16_t temp;
 
     initHardware();                 // initialize PIC ports & peripherals
 
@@ -384,11 +410,11 @@ int main(void)
         // Set RTS pin state based on CR6 and CR5
         LATBbits.LATB4 = (regs_6850.ctrl&0x60) == 0x40;
 
-        // If receive interrupts are enabled, test for events which can
-        // generate them and do so if detected.
+        // If 6850 receive interrupts are enabled, test for events which
+        // can generate them and do so if detected.
         if (ctrl & 0x80) {
             if (((regs_6850.status&0x1) == 0) && ((uart_status&0x1) == 1)) {
-                LATAbits.LATA2 = 0;         // rising edge of U1STA.URXDA
+                LATAbits.LATA2 = 0;         // rising edge of uart_rxda
             }
             else if (((regs_6850.status&0x20) == 0) && ((uart_status&0x2) == 1)) {
                 LATAbits.LATA2 = 0;         // rising edge of U1STA.OERR
@@ -406,33 +432,31 @@ int main(void)
             }
         }
 
-        // Did another character become available?
-        if (!uart_rxda && (uart_status&0x1)) {
-            // Copy the data to the output buffer and set receive data
-            // available flag.  Note: this should be atomic
-            __builtin_disi(0x3fff);
-            regs_6850.rdr = U1RXREG;
-            uart_rxda = 1;
-            __builtin_disi(0);
-        }
-
         // Update the contents of the 6850 status register
         // If CTS is high, inhibit TDRE (bit 1)
         if (PORTAbits.RA1 == 0) {
-            regs_6850.status = uart_rxda | ((~uart_status&0x200)>>8) |
+            regs_6850.status = ((~uart_status&0x200)>>8) |
                                (PORTAbits.RA0<<2) | (PORTAbits.RA1<<3) |
                                ((uart_status&0x4)<<2) | ((uart_status&0x1)<<4) |
                                ((uart_status&0x8)<<3) | (~LATAbits.LATA2<<7);
         }
         else {
-            regs_6850.status = uart_rxda |
-                               (PORTAbits.RA0<<2) | (PORTAbits.RA1<<3) |
+            regs_6850.status = (PORTAbits.RA0<<2) | (PORTAbits.RA1<<3) |
                                ((uart_status&0x4)<<2) | ((uart_status&0x1)<<4) |
                                ((uart_status&0x8)<<3) | (~LATAbits.LATA2<<7);
         }
 
         // Copy 6850 status register & rdr to PMP output port
-        PMDOUT1 = (uint16_t)regs_6850.status | ((uint16_t)regs_6850.rdr << 8);
+        // Avoid allowing uart_rxda from getting out of sync with the
+        // interrupt routines here as it could lead a fast reader to
+        // believe that data is available when in fact it is not.
+        __builtin_disi(0x3fff);
+        regs_6850.status |= uart_rxda;
+        temp = (uint16_t)regs_6850.status | ((uint16_t)regs_6850.rdr << 8);
+        if (temp != PMDOUT1)
+            if (PMSTATbits.OB1E == 0)
+                PMDOUT1 = temp;
+        __builtin_disi(0);
 
         // Copy 6850 baud rate generator to PMP output port
         PMDOUT2 = regs_6850.divisor;

@@ -126,7 +126,7 @@
  *
  * TODO:
  *     TESTING:  Test interrupt operation
- *     PERFORMANCE:  Determine exact operating limits
+ *     PERFORMANCE:  Speedup main loop; speedup critical section
  *     FUNCTIONALITY:  Add software parity (?), 6551 mode (?)
  */
 
@@ -154,6 +154,10 @@
 #ifndef FCY
 #define FCY     14745600            // FCY = FOSC / 2
 #endif
+
+// Defining USE_TX_FIFO will increase output speeds at the cost of reducing the
+// maximum bus write speeds.  Use it with interrupt-driven I/O on the cpu side.
+#define USE_TX_FIFO
 
 // Standard includes
 #include <xc.h>
@@ -242,7 +246,7 @@ static void initHardware(void)
     U1MODEbits.LPBACK = 0;          // loopback mode disabled
     U1MODEbits.ABAUD = 0;           // auto-baud detection disabled
     U1MODEbits.RXINV = 0;           // receive polarity inversion bit (normal)
-    U1MODEbits.BRGH = 1;            // BRG generates 4 clocks per bit period
+    U1MODEbits.BRGH = 0;            // BRG generates 16 clocks per bit period
     U1STAbits.UTXISEL0 = 0;         // intr generated when any char xfered
     U1STAbits.UTXISEL1 = 0;         // to the transmit shift register
     U1STAbits.UTXINV = 0;           // transmit polarity inversion bit
@@ -250,10 +254,8 @@ static void initHardware(void)
     IFS0bits.U1RXIF = 0;            // clear U1RX interrupt flag
     IPC2bits.U1RXIP = 6;            // set U1RX interrupr priority level
     IEC0bits.U1RXIE = 1;            // enable U1RX interrupts
-    //U1MODEbits.PDSEL = 0b00;        // 8-bit data, no parity
-    //U1MODEbits.STSEL = 0;           // one stop bit
-    //U1BRG = xxx;                    // configure baud rate
-    //U1MODEbits.UARTEN = 1;          // enable UART 1
+    U1BRG = DEF_DIVISOR;            // configure baud rate
+    U1MODEbits.UARTEN = 0;          // start with UART disabled
 
     // Configure analog inputs
     AD1PCFG = 0b1001111000111111;   // disable all A/D ports
@@ -327,7 +329,7 @@ void __attribute__((interrupt, auto_psv, shadow)) _PMPInterrupt(void)
     // Process reads from address 1 (receive data register)
     if (PMSTATbits.OB1E) {
         // Clear the OB1E flag by updating PMDOUT1
-        PMDOUT1 &= 0xffde;
+        PMDOUT1 &= 0xfffc;
 
         // Clear any existing interrupts on reads from the RDR
         LATAbits.LATA2 = 1;
@@ -360,6 +362,10 @@ void __attribute__((interrupt, auto_psv, shadow)) _PMPInterrupt(void)
         regs_6850.divisor &= 0x00ff;
         regs_6850.divisor |= PMDIN2 & 0xff00;
     }
+
+    // Clear input buffer overflow status bit (otherwise an overflow will
+    // prevent PMDIN1 and PMDIN2 from being updated by further writes).
+    PMSTATbits.IBOV = 0;
 
     // Clear PMP interrupt flag
     IFS2bits.PMPIF = 0;
@@ -435,7 +441,11 @@ int main(void)
         // Update the contents of the 6850 status register
         // If CTS is high, inhibit TDRE (bit 1)
         if (PORTAbits.RA1 == 0) {
+#ifdef USE_TX_FIFO
             regs_6850.status = ((~uart_status&0x200)>>8) |
+#else
+            regs_6850.status = ((uart_status&0x100)>>7) |
+#endif
                                (PORTAbits.RA0<<2) | (PORTAbits.RA1<<3) |
                                ((uart_status&0x4)<<2) | ((uart_status&0x1)<<4) |
                                ((uart_status&0x8)<<3) | (~LATAbits.LATA2<<7);

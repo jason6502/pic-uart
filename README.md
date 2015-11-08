@@ -17,23 +17,21 @@ require a 5V supply.  This is a regrettable result of the evolution of technolog
 Fortunately, there are technical solutions which are not difficult to implement.  I use a 74LVX4245 level converting
 transceiver mounted on a SOIC-to-DIP adapter myself, though other similar solutions should work equally well.
 
-This version of the code presently supports a variant of the MC6850 UART.  Exact duplication of functionality is not
-possible for several reasons.  First, the PIC does not support a 7-bit mode (though it can probably be emulated with
-8-bit mode and software parity).  Second, rather than forcing the user to provide a separate oscillator from which
-the serial timing is derived, the PICs on-board oscillator is used for this purpose.  This allows the user to select
-virtually any standard baud rate from 300 baud though 921600 baud through an extension.  See the source code for further
-details.  The default baud rate is 9600/38400 baud (depending on the 6850 mode register settings), though that may be
-easily changed by writing to the added baud rate generator register.
+This version of the code presently supports a mostly compatible derivative of the MC6850 ACIA.  Exact duplication of
+functionality is not possible for several reasons.  First, the PIC does not support a 7-bit mode (though it can
+probably be emulated with 8-bit mode and software parity).  Second, rather than forcing the user to provide a separate
+oscillator from which the serial timing is derived, the PICs on-board oscillator is used for this purpose.  This
+allows the user to select virtually any standard baud rate from 300 baud though 921600 baud through an extension.  See
+the source code for further details.  The default baud rate is 9600/38400 baud (depending on the 6850 mode register
+settings), though that may be easily changed by writing to the added baud rate generator register.
 
-While this software has undergone limited testing and appears to be functional within some limits, it should at best
-be considered beta quality at the present time.  Additional testing is necessary in order to determine the precise
-operating limitations of the code so that other systems may be designed around these limitations.
-
-The testing that has been performed so far consists of polled input and output at baud rates from 1200 through
-38400 baud.  Bus speeds of up to 3.68 MHz were tested using a 65C02 CPU with one wait state inserted.  I expect
-higher bus speeds can be easily reached if some usage guidelines are followed, and I expect that it will work at
-lower speeds without the need for any wait states to be inserted on the bus.  Additional testing is scheduled and
-any problems found will be addressed as quickly as is practicable.
+While this software has undergone limited testing and appears to work, it should at best be considered beta quality
+at the present time.  So far polled-I/O has been fairly extensively tested and found to work, but interrupt-driven
+I/O remains untested.  As far as operating limitations go, the system is able to successfully transmit and receive
+at all baud rates from 300 through 921600 baud with no crystal and operating at room temperature only.  CPU bus
+speeds up to 4 MHz (TX FIFO enabled) and 5 MHz (TX FIFO disabled) are confirmed to work using a 65C02 CPU.  Wait
+states do not appear to be necessary at these bus speeds, though most testing was performed with a single wait
+state inserted.
 
 Bug fixes, comments, and suggestions are welcome.
 

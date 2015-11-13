@@ -177,7 +177,6 @@ typedef struct {
 
 // Program globals
 volatile regs_6850_t regs_6850;
-volatile uint8_t uart_rxda;         // Receive data available flag
 
 ////////////////////////////////////
 // Configure hardware peripherals //
@@ -278,12 +277,21 @@ static void initHardware(void)
 void __attribute__((interrupt, auto_psv, shadow)) _U1RXInterrupt(void)
 {
     // A new character is available.  If the receive data register is not
-    // already full, copy the new character to it and set the receive
-    // data available flag.
-    if (uart_rxda == 0) {
+    // already full, copy the new character to it.
+    if ((regs_6850.status&0x1) == 0) {
         regs_6850.rdr = U1RXREG;
-        uart_rxda = 1;
     }
+
+    // Update the following bits in the status register:
+    // b0 - set (receive data available)
+    // b4 - framing error (from uart status)
+    // b5 - overrun error (from uart status)
+    // b6 - parity error (from uart status)
+    // b7 - irq state
+    regs_6850.status &= 0b00001110;
+    regs_6850.status |= 1 |
+                        (U1STAbits.FERR<<4) | (U1STAbits.OERR<<5) |
+                        (U1STAbits.PERR<<6) | (regs_6850.ctrl&0x80);
 
     // Clear UART1 RX interrupt flag
     IFS0bits.U1RXIF = 0;
@@ -294,6 +302,8 @@ void __attribute__((interrupt, auto_psv, shadow)) _U1RXInterrupt(void)
 ///////////////////////////////////////////////////////////////
 void __attribute__((interrupt, auto_psv, shadow)) _PMPInterrupt(void)
 {
+    uint8_t uart_rxda;
+
     // Process writes to address 0 (control register) first
     if (PMSTATbits.IB0F) {
         // read in new value for control register
@@ -305,6 +315,7 @@ void __attribute__((interrupt, auto_psv, shadow)) _PMPInterrupt(void)
             U1BRG = regs_6850.divisor;      // update UART baud rate generator
             U1MODEbits.UARTEN = 1;          // enable UART
             U1STAbits.UTXEN = 1;            // enable UART transmitter
+            // XXX -- check status register for additional things to do here
         }
         // check for break request
         else if ((regs_6850.ctrl&0x60) == 0x60) {
@@ -324,18 +335,20 @@ void __attribute__((interrupt, auto_psv, shadow)) _PMPInterrupt(void)
         // transmmission.  Note:  if U1STAbits.UTXBF is set, the previous
         // contents of this register will be lost.
         U1TXREG = PMDIN1 >> 8;
+
+        // Update the following bits in the status register:
+        // b1 - clear TDRE flag
+        // b7 - clear IRQ state
+        regs_6850.status &= 0b01111101;
+
+        // Update PMDOUT1
+        PMDOUT1 = (uint16_t)regs_6850.status | ((uint16_t)regs_6850.rdr << 8);
     }
 
     // Process reads from address 1 (receive data register)
     if (PMSTATbits.OB1E) {
-        // Clear the OB1E flag by updating PMDOUT1
-        PMDOUT1 &= 0xfffc;
-
         // Clear any existing interrupts on reads from the RDR
         LATAbits.LATA2 = 1;
-
-        // Clear any overflow errors on reads from the RDR
-        U1STAbits.OERR = 0;
 
         // Check for more data in FIFO
         if (U1STAbits.URXDA) {
@@ -348,6 +361,18 @@ void __attribute__((interrupt, auto_psv, shadow)) _PMPInterrupt(void)
             // no more data available -- clear the receive data available flag
             uart_rxda = 0;
         }
+
+        // Update the following bits in the status register:
+        // b0 - update RDRF flag
+        // b7 - clear IRQ state
+        regs_6850.status &= 0b01111110;
+        regs_6850.status |= uart_rxda;
+
+        // Update PMDOUT1 (also clears the OB1E flag)
+        PMDOUT1 = (uint16_t)regs_6850.status | ((uint16_t)regs_6850.rdr << 8);
+
+        // Clear any overflow errors on reads from the RDR
+        U1STAbits.OERR = 0;
     }
 
     // Process writes to address 2 (baud rate generator low byte)
@@ -374,27 +399,29 @@ void __attribute__((interrupt, auto_psv, shadow)) _PMPInterrupt(void)
 int main(void)
 {
     uint8_t ctrl;
-    uint16_t uart_status;
+    uint8_t last_status;
+    uint8_t rx_intr_arm;
+    uint8_t tx_intr_arm;
     uint16_t temp;
 
     initHardware();                 // initialize PIC ports & peripherals
 
     // Set initial values of variables
     regs_6850.rdr = 0;              // initial contents of data register
-    regs_6850.divisor = DEF_DIVISOR;// 115200 baud at 7.3728 MHz
+    regs_6850.divisor = DEF_DIVISOR;// 115200 baud at 7.3728 * 4 MHz
+    last_status = 0;
 
     // Serial Event Dispatch Loop
     for (;;) {
         // Avoid race conditions by reading uart status and 6850 control
         // register only once per iteration
-        uart_status = U1STA;
         ctrl = regs_6850.ctrl;
 
         // Configure baud rate generator based on CR1 and CR0
         U1MODEbits.BRGH = (regs_6850.ctrl&0x3) == 0;
 
         // Configure parity and stop bits based on CR3 and CR2
-        switch (regs_6850.ctrl & 0xc) {
+        switch (ctrl & 0xc) {
             case 0:
                 U1MODEbits.PDSEL = 0b00;        // 8 bits, no parity
                 U1MODEbits.STSEL = 1;           // 2 stop bits
@@ -414,58 +441,62 @@ int main(void)
         }
 
         // Set RTS pin state based on CR6 and CR5
-        LATBbits.LATB4 = (regs_6850.ctrl&0x60) == 0x40;
+        LATBbits.LATB4 = (ctrl&0x60) == 0x40;
 
-        // If 6850 receive interrupts are enabled, test for events which
-        // can generate them and do so if detected.
-        if (ctrl & 0x80) {
-            if (((regs_6850.status&0x1) == 0) && ((uart_status&0x1) == 1)) {
-                LATAbits.LATA2 = 0;         // rising edge of uart_rxda
-            }
-            else if (((regs_6850.status&0x20) == 0) && ((uart_status&0x2) == 1)) {
-                LATAbits.LATA2 = 0;         // rising edge of U1STA.OERR
-            }
-            else if (((regs_6850.status&0x4) == 0) && PORTAbits.RA0 == 1) {
-                LATAbits.LATA2 = 0;         // rising edge of DCDn
+        // Cache interrupt predicates ahead of critical section
+        rx_intr_arm = (ctrl&0x80) && ((last_status&0x4) == 0);
+        tx_intr_arm = ((ctrl&0x60) == 0x20) && ((last_status&0x2) == 0);
+
+        // BEGIN CRITICAL SECTION
+        // Minimize time required by this section as it will determine
+        // the maximmum rate at which some bits in the status register
+		// can change in response to uart events.
+        __builtin_disi(0x3fff);
+
+        // Update regs_6850.status:
+        // b1 - TDRE (asynchronous)
+        // b2 - DCDn (asynchronous) (optional)
+        // b3 - CTSn (asynchronous) (optional)
+        // b4 - FE (asynchronous) (optional)
+
+        // Mask off bits we're updating
+        regs_6850.status &= 0b11100001;
+
+        // If CTS is high, inhibit TDRE (bit 1)
+        if (PORTAbits.RA1 == 0) {
+            regs_6850.status |= (U1STAbits.TRMT<<1);
+        }
+
+        regs_6850.status |= (PORTAbits.RA0<<2) | (PORTAbits.RA1<<3) |
+                            (U1STAbits.FERR<<4);
+
+        // If 6850 receive interrupts are enabled, test for additional
+        // events which can generate them and do so if detected.
+        if (rx_intr_arm) {
+            if (regs_6850.status&0x4) {
+                regs_6850.status |= 0x80;
             }
         }
 
         // If transmit interrupts are enabled, generate an interrupt if
         // transmit data empty (not full) event occurs.
-        if ((ctrl&0x60) == 0x20) {
-            if (((regs_6850.status&0x2) == 0) && ((uart_status&0x200) == 0)) {
-                LATAbits.LATA2 = 0;         // falling edge of U1STA.UTXBF
+        if (tx_intr_arm) {
+            if (regs_6850.status&0x2) {
+                regs_6850.status |= 0x80;
             }
         }
 
-        // Update the contents of the 6850 status register
-        // If CTS is high, inhibit TDRE (bit 1)
-        if (PORTAbits.RA1 == 0) {
-#ifdef USE_TX_FIFO
-            regs_6850.status = ((~uart_status&0x200)>>8) |
-#else
-            regs_6850.status = ((uart_status&0x100)>>7) |
-#endif
-                               (PORTAbits.RA0<<2) | (PORTAbits.RA1<<3) |
-                               ((uart_status&0x4)<<2) | ((uart_status&0x1)<<4) |
-                               ((uart_status&0x8)<<3) | (~LATAbits.LATA2<<7);
-        }
-        else {
-            regs_6850.status = (PORTAbits.RA0<<2) | (PORTAbits.RA1<<3) |
-                               ((uart_status&0x4)<<2) | ((uart_status&0x1)<<4) |
-                               ((uart_status&0x8)<<3) | (~LATAbits.LATA2<<7);
-        }
+        // Set IRQ pin to be the inverse of b7 of regs_6850.status
+        // (this triggers an interrupt on the connected CPU)
+        LATAbits.LATA2 = (regs_6850.status&0x80) ? 0 : 1;
 
         // Copy 6850 status register & rdr to PMP output port
-        // Avoid allowing uart_rxda from getting out of sync with the
-        // interrupt routines here as it could lead a fast reader to
-        // believe that data is available when in fact it is not.
-        __builtin_disi(0x3fff);
-        regs_6850.status |= uart_rxda;
+        last_status = regs_6850.status;
         temp = (uint16_t)regs_6850.status | ((uint16_t)regs_6850.rdr << 8);
-        if (temp != PMDOUT1)
-            if (PMSTATbits.OB1E == 0)
-                PMDOUT1 = temp;
+        if ((temp != PMDOUT1) && (PMSTATbits.OB1E == 0))
+            PMDOUT1 = temp;
+
+        // END CRITICAL SECTION
         __builtin_disi(0);
 
         // Copy 6850 baud rate generator to PMP output port

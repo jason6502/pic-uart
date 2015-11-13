@@ -27,13 +27,13 @@ register settings), though that may be easily changed by writing to the extra re
 
 While this software has undergone limited testing and appears to work, it should be considered beta quality at the
 present time.  So far polled-I/O has been fairly extensively tested and found to work, but interrupt-driven I/O
-I/O has been only minimally tested.  As far as operating limitations go, the system is able to successfully transmit
+I/O has not been thoroughly tested.  As far as operating limitations go, the system is able to successfully transmit
 and receive at all baud rates from 300 through 921600 baud with no crystal and operating at room temperature only.
 No wait states are required on the bus up to at least 5 MHz.  However, when performming polled I/O at bus speeds above
 about 4 MHz, it will be necessary to limit the rate at which the status register is accessed in order to give the PIC
 sufficient time to update all of the status register flags between accesses.  In interrupt mode, this should not be
-necessary.  Bear in mind, however, that when an interrupt occurs, it may be necessary to check the status register
-after receiving a character as there may be more than one character in the FIFO.
+necessary.  As with any UART with a FIFO, one must remember that when an interrupt occurs, it is necessary to check
+the status register after receiving a character as there may be more than one character waiting to be read.
 
 Bug fixes, comments, and suggestions are welcome.
 

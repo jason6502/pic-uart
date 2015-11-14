@@ -19,7 +19,7 @@
  * along with pic-uart.c.  If not, see <http://www.gnu.org/licenses/>.
  *
  *
- * 6551/6850 ACIA Emulation on Microchip PIC24FJ32GA002 MCU
+ * MC6850 ACIA Emulation on Microchip PIC24FJ32GA002 MCU
  *
  * PIN NAME     DESCRIPTION
  * ---------------------------------------------------------------------
@@ -53,8 +53,8 @@
  * 28  AVDD     Connect to +3.3V
  * (*) designates pins which are 5V tolerant
  *
- * 6850 Mode
- * ---------
+ * MC6850 Mode
+ * -----------
  *
  * Addr Bit Dir Description             Dir Description
  * -------------------------------------------------------------------------
@@ -125,9 +125,9 @@
  *    921600         0  0.00        3   0.00
  *
  * TODO:
- *     TESTING:  Test interrupt operation
- *     PERFORMANCE:  Speedup main loop; speedup critical section
- *     FUNCTIONALITY:  Add software parity (?), 6551 mode (?)
+ *     TESTING:  Test all bits in status register
+ *     PERFORMANCE:  Speedup critical section in main (assembly language?)
+ *     FUNCTIONALITY:  Add software parity, clear status bits on device reset
  */
 
 // Chip Configuration

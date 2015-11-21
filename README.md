@@ -1,10 +1,9 @@
 # pic-uart
 Software Transparent UART Emulator for PIC24 with PMP
 
-This project grew out of an interest in having a breadboardable UART capable of working with older 8/16-bit CPUs.  While
-a handful of UARTs are still made, they typically do not come in DIP format.  Of the few that do, many are no longer
-manufactured and thus increasingly difficult to find.  Or in at least one case (65C51), the chip has (known) bugs
-that reduce its functionality.
+This project grew out of an interest in having a breadboardable UART capable of working with older CPU with the ability to use an 8-bit data bus.  While a handful of UARTs are still made, they typically do not come in DIP format.  Of the few that
+do, many are no longer manufactured and thus increasingly difficult to find.  Or in at least one case (65C51), the chip has
+(known) bugs that impair its usefulness.
 
 The PIC24 was chosen for several reasons.  It is inexpensive, available in DIP format (breadboardable), and perhaps most
 importantly, it has a Parallel Master Port (PMP) on it.  This allows it to be directly interfaced to a typical 8-bit
